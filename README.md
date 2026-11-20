@@ -5,7 +5,7 @@ PyDesk は、Python のコードと標準入力をひとつのウィンドウに
 ## 起動する
 
 1. Windows 10 / 11（x64）で、Python 3 を使える状態にします。
-2. [最新版の PyDesk.exe](https://github.com/siro103/PyDesk/releases/latest/download/PyDesk.exe) をダウンロードして起動します。
+2. [最新版の Windows x64 用 ZIP](https://github.com/siro103/PyDesk/releases/latest/download/PyDesk-windows-x64.zip) を展開し、`PyDesk.exe` を起動します。
 3. 左にコード、右上に標準入力を書き、**Ctrl+Enter** で実行します。初回のサンプルは、入力した整数を合計して右下に `14` と表示します。
 
 ## 編集と実行
@@ -35,3 +35,7 @@ Python 3、Visual Studio 2022 Build Tools の「C++ によるデスクトップ�
 .\build.cmd test
 .\build.cmd ui-test
 ```
+
+## ライセンス
+
+PyDesk のソースコードと実行ファイルは [MIT License](LICENSE) で配布しています。配布用の ZIP には著作権表示とライセンス全文を同梱しています。
