@@ -61,6 +61,31 @@ int main() {
         untilDone(a);
         ensure(ui::get(a.output) == L"14\n", "run button executes sample");
         ensure(IsWindowEnabled(a.runBtn) && !IsWindowEnabled(a.stopBtn), "idle button state");
+        HWND unlimited = FindWindowExW(a.win, nullptr, L"BUTTON", L"制限なしで実行");
+        ensure(unlimited && IsWindowVisible(unlimited) && IsWindowEnabled(unlimited),
+               "unlimited run button is available from the toolbar");
+        a.cmd(ID_T2);
+        a.resetDoc(L"import time\ntime.sleep(2.4)\nprint('finished')");
+        SendMessageW(unlimited, BM_CLICK, 0, 0);
+        ensure(a.job && !IsWindowEnabled(a.runBtn) && !IsWindowEnabled(unlimited) &&
+                   IsWindowEnabled(a.stopBtn),
+               "both run buttons are disabled while an unlimited run can be stopped");
+        untilDone(a);
+        ensure(ui::get(a.output) == L"finished\n" && a.resultLabel == L"正常終了",
+               "one-off unlimited run finishes beyond the configured two-second limit");
+        ensure(a.timeout == 2000 && (GetMenuState(a.menu, ID_T2, MF_BYCOMMAND) & MF_CHECKED),
+               "unlimited run preserves the selected timeout");
+        SendMessageW(a.runBtn, BM_CLICK, 0, 0);
+        untilDone(a);
+        ensure(a.resultLabel == L"時間制限を超えました",
+               "the next normal run still uses the configured limit");
+        a.resetDoc(L"while True: pass");
+        SendMessageW(unlimited, BM_CLICK, 0, 0);
+        SendMessageW(a.stopBtn, BM_CLICK, 0, 0);
+        untilDone(a);
+        ensure(a.resultLabel == L"停止しました" && IsWindowEnabled(unlimited) && IsWindowEnabled(a.runBtn),
+               "Stop cancels an unlimited run and restores both run buttons");
+        a.cmd(ID_T10);
         checkEnter(a, a.input, L"1 2", {3, 3}, L"1 2\n", 4, "Enter in stdin inserts a single line break");
         checkEnter(a, a.code, L"x = 1", {5, 5}, L"x = 1\n", 6, "Enter at end of code inserts one break");
         checkEnter(a, a.code, L"if True:\n    pass", {8, 8}, L"if True:\n    \n    pass", 13,

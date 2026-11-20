@@ -49,9 +49,13 @@ enum Id {
     ID_T10,
     ID_T60,
     ID_TNONE,
-    ID_CLEAR_INPUT
+    ID_CLEAR_INPUT,
+    ID_RUN_UNLIMITED
 };
 constexpr int limits[] = {2000, 10000, 60000, 0};
+static Text timeoutLabel(int milliseconds) {
+    return milliseconds ? std::to_wstring(milliseconds / 1000) + L"秒" : L"制限なし";
+}
 constexpr int syntaxTimer = 1, runTimer = 2;
 constexpr auto sample = L"def solve():\n    numbers = list(map(int, input().split()))\n    "
                         L"print(sum(numbers))\n\n\nif __name__ == \"__main__\":\n    solve()\n";
@@ -70,7 +74,8 @@ struct Session {
 };
 struct App {
     HINSTANCE instance{};
-    HWND win{}, code{}, input{}, output{}, runBtn{}, stopBtn{}, copyBtn{}, clearBtn{}, findWindow{};
+    HWND win{}, code{}, input{}, output{}, runBtn{}, unlimitedBtn{}, stopBtn{}, copyBtn{}, clearBtn{},
+        findWindow{};
     HFONT normal{}, bold{}, smallFont{}, mono{}, brand{};
     HBRUSH white{};
     ITextDocument *doc = nullptr;
@@ -261,6 +266,7 @@ struct App {
         item(e, ID_COPY_UP, L"上に行を複製\tAlt+Shift+↑");
         item(e, ID_COPY_DOWN, L"下に行を複製\tAlt+Shift+↓");
         item(r, ID_RUN, L"Python を実行\tCtrl+Enter / F5");
+        item(r, ID_RUN_UNLIMITED, L"制限なしで実行");
         item(r, ID_STOP, L"停止\tShift+F5");
         item(tm, ID_T2, L"2 秒");
         item(tm, ID_T10, L"10 秒");
@@ -311,6 +317,7 @@ struct App {
         output = textBox(true, L"output");
         doc = ui::document(code);
         runBtn = button(ID_RUN, L"実行");
+        unlimitedBtn = button(ID_RUN_UNLIMITED, L"制限なしで実行");
         stopBtn = button(ID_STOP, L"停止");
         copyBtn = button(ID_COPY_OUTPUT, L"コピー");
         clearBtn = button(ID_CLEAR_INPUT, L"クリア");
@@ -348,8 +355,9 @@ struct App {
         int rx = xSplit + scale(15), rw = w - rx - scale(8);
         rect(input, rx, top + head + scale(10), rw, ySplit - top - head - scale(15));
         rect(output, rx, ySplit + head + scale(10), rw, foot - ySplit - head - scale(15));
-        rect(runBtn, w - scale(161), scale(14), scale(141), scale(36));
-        rect(stopBtn, w - scale(241), scale(14), scale(70), scale(36));
+        rect(runBtn, w - scale(208), scale(14), scale(188), scale(36));
+        rect(unlimitedBtn, w - scale(336), scale(14), scale(120), scale(36));
+        rect(stopBtn, w - scale(414), scale(14), scale(70), scale(36));
         rect(clearBtn, w - scale(76), top + scale(7), scale(62), head - scale(14));
         rect(copyBtn, w - scale(76), ySplit + scale(7) + line, scale(62), head - scale(14));
         scheduleColor();
@@ -403,11 +411,17 @@ struct App {
             t.left = scale(primary ? 35 : 30);
             drawText(dc, primary ? L"実行" : L"停止", t, bold, fg);
             if (primary) {
-                t.left = scale(70);
-                drawText(dc, L"Ctrl+Enter", t, smallFont, disabled ? fg : RGB(209, 238, 225));
+                COLORREF detail = disabled ? fg : RGB(209, 238, 225);
+                t.left = scale(72);
+                drawText(dc, timeoutLabel(timeout), t, smallFont, detail);
+                t.left = scale(125);
+                drawText(dc, L"Ctrl+Enter", t, smallFont, detail);
             }
-        } else
-            drawText(dc, d->CtlID == ID_COPY_OUTPUT ? L"コピー" : L"クリア", b, smallFont, fg, DT_CENTER);
+        } else {
+            wchar_t label[32]{};
+            GetWindowTextW(d->hwndItem, label, _countof(label));
+            drawText(dc, label, b, d->CtlID == ID_RUN_UNLIMITED ? bold : smallFont, fg, DT_CENTER);
+        }
         if (d->itemState & ODS_FOCUS) {
             InflateRect(&b, -3, -3);
             DrawFocusRect(dc, &b);
@@ -483,13 +497,15 @@ struct App {
     }
     void controls(bool active) {
         EnableWindow(runBtn, !active);
+        EnableWindow(unlimitedBtn, !active);
         EnableWindow(stopBtn, active);
         EnableMenuItem(menu, ID_RUN, MF_BYCOMMAND | (active ? MF_GRAYED : MF_ENABLED));
+        EnableMenuItem(menu, ID_RUN_UNLIMITED, MF_BYCOMMAND | (active ? MF_GRAYED : MF_ENABLED));
         EnableMenuItem(menu, ID_STOP, MF_BYCOMMAND | (active ? MF_ENABLED : MF_GRAYED));
         InvalidateRect(output, nullptr, TRUE);
         refresh();
     }
-    void execute() {
+    void execute(int timeoutMs) {
         if (job)
             return;
         auto src = ui::get(code), in = ui::get(input);
@@ -499,20 +515,20 @@ struct App {
         utfTail.clear();
         pendingCR = false;
         placeholder.clear();
-        summary = L"Python を実行中";
+        summary = L"Python を実行中（" + timeoutLabel(timeoutMs) + L"）";
         resultLabel = L"実行中";
         stateColor = green;
         auto *session = job.get();
         try {
             session->thread =
-                std::thread([session, src = std::move(src), in = std::move(in), file, ms = timeout]() {
+                std::thread([session, src = std::move(src), in = std::move(in), file, timeoutMs]() {
                     auto emit = [&](const char *data, size_t n) {
                         std::lock_guard<std::mutex> guard(session->lock);
                         session->bytes.append(data, n);
                     };
                     run::Result result{};
                     try {
-                        result = run::execute(src, in, file, ms, session->stop, emit);
+                        result = run::execute(src, in, file, timeoutMs, session->stop, emit);
                     } catch (const std::exception &e) {
                         std::string why = e.what();
                         emit(why.data(), why.size());
@@ -892,6 +908,7 @@ struct App {
         if (id >= ID_T2 && id <= ID_TNONE) {
             timeout = limits[id - ID_T2];
             CheckMenuRadioItem(menu, ID_T2, ID_TNONE, id, MF_BYCOMMAND);
+            InvalidateRect(runBtn, nullptr, TRUE);
             return;
         }
         switch (id) {
@@ -915,7 +932,10 @@ struct App {
             PostMessageW(win, WM_CLOSE, 0, 0);
             break;
         case ID_RUN:
-            execute();
+            execute(timeout);
+            break;
+        case ID_RUN_UNLIMITED:
+            execute(0);
             break;
         case ID_STOP:
             if (job)
